@@ -1,6 +1,8 @@
 package com.example.basedemo.controller;
 
 import com.example.basedemo.dto.AuditRequest;
+import com.example.basedemo.dto.CourseRequest;
+import com.example.basedemo.dto.CourseTypeRequest;
 import com.example.basedemo.dto.CsvImportRequest;
 import com.example.basedemo.dto.EnrollResponse;
 import com.example.basedemo.service.EnrollRecordService;
@@ -76,5 +78,20 @@ public class EnrollRecordController {
     @PostMapping("/reject")
     public EnrollResponse reject(@RequestBody AuditRequest request) {
         return enrollRecordService.reject(request.getRecordKeys());
+    }
+
+    @PostMapping("/types")
+    public EnrollResponse addCourseType(@RequestBody CourseTypeRequest request) {
+        return enrollRecordService.addCourseType(request.getCourseType());
+    }
+
+    @PostMapping("/types/delete")
+    public EnrollResponse deleteCourseType(@RequestBody CourseTypeRequest request) {
+        return enrollRecordService.deleteCourseType(request.getCourseType());
+    }
+
+    @PostMapping("/courses")
+    public EnrollResponse addCourse(@RequestBody CourseRequest request) {
+        return enrollRecordService.addCourse(request.getCourseId(), request.getCourseName(), request.getCourseType());
     }
 }

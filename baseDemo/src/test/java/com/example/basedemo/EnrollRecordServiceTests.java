@@ -63,6 +63,38 @@ class EnrollRecordServiceTests {
     }
 
     @Test
+    void addAndDeleteCourseTypeManagesTypeList() {
+        EnrollRecordService service = new EnrollRecordService();
+
+        EnrollResponse addedResponse = service.addCourseType("实验课");
+
+        assertThat(addedResponse.getCourseTypes()).contains("实验课");
+        assertThat(addedResponse.getRecordsByType()).containsKey("实验课");
+        assertThat(addedResponse.getRecordsByType().get("实验课")).isEmpty();
+
+        EnrollResponse deletedResponse = service.deleteCourseType("专业课");
+
+        assertThat(deletedResponse.getCourseTypes()).doesNotContain("专业课");
+        assertThat(deletedResponse.getCourseTypes()).contains("未分类");
+        assertThat(deletedResponse.getRecords())
+                .filteredOn(record -> record.dedupKey().equals("S000001#C000001"))
+                .extracting(EnrollRecord::getCourseType)
+                .containsExactly("未分类");
+    }
+
+    @Test
+    void addCourseCreatesCourseUnderSelectedType() {
+        EnrollRecordService service = new EnrollRecordService();
+
+        EnrollResponse response = service.addCourse("C000099", "软件测试", "实验课");
+
+        assertThat(response.getCourseTypes()).contains("实验课");
+        assertThat(response.getCoursesByType().get("实验课"))
+                .extracting(course -> course.getCourseId() + "#" + course.getCourseName())
+                .containsExactly("C000099#软件测试");
+    }
+
+    @Test
     void largeImportKeepsStablePerformanceForSimpleProcessing() {
         EnrollRecordService service = new EnrollRecordService();
         StringBuilder csvText = new StringBuilder();

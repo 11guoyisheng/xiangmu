@@ -164,6 +164,18 @@
             margin-bottom: 12px;
         }
 
+        .type-manager {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+        }
+
+        .type-manager input {
+            flex: 1 1 220px;
+        }
+
         .type-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -175,10 +187,29 @@
             font-size: 16px;
         }
 
+        .type-title {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: center;
+        }
+
         .type-group ul {
             margin: 0;
             padding-left: 18px;
             line-height: 1.8;
+        }
+
+        .course-add {
+            display: grid;
+            grid-template-columns: 1fr 1.4fr auto;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .course-meta {
+            color: #526071;
+            font-size: 12px;
         }
 
         @media (max-width: 640px) {
@@ -192,6 +223,10 @@
 
             button {
                 width: 100%;
+            }
+
+            .course-add {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -243,6 +278,10 @@ S000004,C000006,创新创业基础,选修课</textarea>
 
     <section>
         <h2>按课程类型分类</h2>
+        <div class="type-manager">
+            <input id="newCourseTypeInput" type="text" placeholder="输入新课程分类，如实验课">
+            <button id="addCourseTypeButton" type="button">添加分类</button>
+        </div>
         <div class="type-grid" id="typeGrid"></div>
     </section>
 </main>
@@ -254,6 +293,7 @@ S000004,C000006,创新创业基础,选修课</textarea>
     const typeGrid = document.querySelector("#typeGrid");
     const keywordInput = document.querySelector("#keywordInput");
     const selectAll = document.querySelector("#selectAll");
+    const newCourseTypeInput = document.querySelector("#newCourseTypeInput");
 
     document.querySelector("#importButton").addEventListener("click", async () => {
         const response = await fetch("/api/enrollments/import", {
@@ -273,6 +313,7 @@ S000004,C000006,创新创业基础,选修课</textarea>
     document.querySelector("#resetButton").addEventListener("click", loadRecords);
     document.querySelector("#batchApproveButton").addEventListener("click", () => auditSelected("approve"));
     document.querySelector("#batchRejectButton").addEventListener("click", () => auditSelected("reject"));
+    document.querySelector("#addCourseTypeButton").addEventListener("click", addCourseType);
 
     selectAll.addEventListener("change", () => {
         document.querySelectorAll(".record-check").forEach(checkbox => {
@@ -295,7 +336,7 @@ S000004,C000006,创新创业基础,选修课</textarea>
     function render(data) {
         message.textContent = data.message || "";
         renderTable(data.records || []);
-        renderGroups(data.recordsByType || {});
+        renderGroups(data.recordsByType || {}, data.coursesByType || {});
     }
 
     function renderTable(records) {
@@ -324,7 +365,7 @@ S000004,C000006,创新创业基础,选修课</textarea>
         selectAll.checked = false;
     }
 
-    function renderGroups(recordsByType) {
+    function renderGroups(recordsByType, coursesByType) {
         const entries = Object.entries(recordsByType);
         typeGrid.innerHTML = "";
 
@@ -333,14 +374,30 @@ S000004,C000006,创新创业基础,选修课</textarea>
             return;
         }
 
-        typeGrid.innerHTML = entries.map(([type, records]) => `
+        typeGrid.innerHTML = entries.map(([type, records]) => {
+            const courses = coursesByType[type] || [];
+            return `
             <div class="type-group">
-                <h3>${escapeHtml(type)}（${records.length}）</h3>
+                <div class="type-title">
+                    <h3>${escapeHtml(type)}（${records.length}）</h3>
+                    <button class="small danger" type="button" onclick="deleteCourseType('${escapeHtml(type)}')">删除分类</button>
+                </div>
                 <ul>
-                    ${records.map(record => `<li>${escapeHtml(record.studentId)} - ${escapeHtml(record.courseName)}</li>`).join("")}
+                    ${courses.length === 0 ? "<li>暂无课程</li>" : courses.map(course => `
+                        <li>
+                            ${escapeHtml(course.courseId)} - ${escapeHtml(course.courseName)}
+                            <span class="course-meta">选课记录：${records.filter(record => record.courseId === course.courseId).length}</span>
+                        </li>
+                    `).join("")}
                 </ul>
+                <div class="course-add">
+                    <input id="courseId-${safeDomId(type)}" type="text" placeholder="课程ID">
+                    <input id="courseName-${safeDomId(type)}" type="text" placeholder="课程名称">
+                    <button class="secondary" type="button" onclick="addCourse('${escapeHtml(type)}')">添加课程</button>
+                </div>
             </div>
-        `).join("");
+        `;
+        }).join("");
     }
 
     async function auditOne(action, recordKey) {
@@ -358,6 +415,42 @@ S000004,C000006,创新创业基础,选修课</textarea>
             method: "POST",
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify({recordKeys})
+        });
+        render(await response.json());
+    }
+
+    async function addCourseType() {
+        const courseType = newCourseTypeInput.value.trim();
+        const response = await fetch("/api/enrollments/types", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({courseType})
+        });
+        newCourseTypeInput.value = "";
+        render(await response.json());
+    }
+
+    async function deleteCourseType(courseType) {
+        const response = await fetch("/api/enrollments/types/delete", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({courseType})
+        });
+        render(await response.json());
+    }
+
+    async function addCourse(courseType) {
+        const typeId = safeDomId(courseType);
+        const courseIdInput = document.querySelector(`#courseId-${typeId}`);
+        const courseNameInput = document.querySelector(`#courseName-${typeId}`);
+        const response = await fetch("/api/enrollments/courses", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                courseType,
+                courseId: courseIdInput.value.trim(),
+                courseName: courseNameInput.value.trim()
+            })
         });
         render(await response.json());
     }
@@ -384,6 +477,16 @@ S000004,C000006,创新创业基础,选修课</textarea>
             .replaceAll(">", "&gt;")
             .replaceAll('"', "&quot;")
             .replaceAll("'", "&#039;");
+    }
+
+    function safeDomId(value) {
+        let hash = 0;
+        const text = String(value || "");
+        for (let i = 0; i < text.length; i++) {
+            hash = ((hash << 5) - hash) + text.charCodeAt(i);
+            hash |= 0;
+        }
+        return `type-${Math.abs(hash)}`;
     }
 
     loadRecords();

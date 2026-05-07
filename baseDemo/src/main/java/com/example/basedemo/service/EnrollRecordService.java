@@ -1,6 +1,7 @@
 package com.example.basedemo.service;
 
 import com.example.basedemo.dto.EnrollResponse;
+import com.example.basedemo.model.CourseInfo;
 import com.example.basedemo.model.EnrollRecord;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -21,10 +22,13 @@ public class EnrollRecordService {
     private static final String PUBLIC_COURSE = "公共课";
     private static final String MAJOR_COURSE = "专业课";
     private static final String ELECTIVE_COURSE = "选修课";
+    private static final String UNCATEGORIZED = "未分类";
     private static final String APPROVED = "已通过";
     private static final String REJECTED = "已拒绝";
 
     private final List<EnrollRecord> currentRecords = new ArrayList<>();
+    private final List<String> courseTypes = new ArrayList<>(List.of(PUBLIC_COURSE, MAJOR_COURSE, ELECTIVE_COURSE));
+    private final List<CourseInfo> courses = new ArrayList<>();
 
     public EnrollRecordService() {
         currentRecords.addAll(processRecords(List.of(
@@ -34,6 +38,7 @@ public class EnrollRecordService {
                 new EnrollRecord("S000001", "C000004", "人工智能导论", ELECTIVE_COURSE),
                 new EnrollRecord("S000004", "C000005", "数据库系统", MAJOR_COURSE)
         )));
+        syncCoursesFromRecords(currentRecords);
     }
 
     public synchronized EnrollResponse listAll() {
@@ -46,6 +51,7 @@ public class EnrollRecordService {
 
         currentRecords.clear();
         currentRecords.addAll(processedRecords);
+        syncCoursesFromRecords(processedRecords);
 
         String message = "导入成功，处理后共有 " + processedRecords.size() + " 条选课记录";
         return buildResponse(new ArrayList<>(currentRecords), message);
@@ -74,6 +80,62 @@ public class EnrollRecordService {
 
     public synchronized EnrollResponse reject(List<String> recordKeys) {
         return updateAuditStatus(recordKeys, REJECTED);
+    }
+
+    public synchronized EnrollResponse addCourseType(String courseType) {
+        if (!StringUtils.hasText(courseType)) {
+            return buildResponse(new ArrayList<>(currentRecords), "课程分类名称不能为空");
+        }
+
+        String normalizedCourseType = normalizeCourseTypeForManagement(courseType);
+        if (!courseTypes.contains(normalizedCourseType)) {
+            courseTypes.add(normalizedCourseType);
+            return buildResponse(new ArrayList<>(currentRecords), "已添加课程分类：" + normalizedCourseType);
+        }
+        return buildResponse(new ArrayList<>(currentRecords), "课程分类已存在：" + normalizedCourseType);
+    }
+
+    public synchronized EnrollResponse deleteCourseType(String courseType) {
+        if (!StringUtils.hasText(courseType)) {
+            return buildResponse(new ArrayList<>(currentRecords), "课程分类名称不能为空");
+        }
+
+        String normalizedCourseType = normalizeCourseTypeForManagement(courseType);
+        if (!courseTypes.remove(normalizedCourseType)) {
+            return buildResponse(new ArrayList<>(currentRecords), "课程分类不存在：" + normalizedCourseType);
+        }
+
+        currentRecords.stream()
+                .filter(record -> normalizedCourseType.equals(record.getCourseType()))
+                .forEach(record -> record.setCourseType(UNCATEGORIZED));
+        courses.stream()
+                .filter(course -> normalizedCourseType.equals(course.getCourseType()))
+                .forEach(course -> course.setCourseType(UNCATEGORIZED));
+
+        if (!courseTypes.contains(UNCATEGORIZED)) {
+            courseTypes.add(UNCATEGORIZED);
+        }
+        return buildResponse(new ArrayList<>(currentRecords), "已删除课程分类：" + normalizedCourseType);
+    }
+
+    public synchronized EnrollResponse addCourse(String courseId, String courseName, String courseType) {
+        if (!StringUtils.hasText(courseId) || !StringUtils.hasText(courseName) || !StringUtils.hasText(courseType)) {
+            return buildResponse(new ArrayList<>(currentRecords), "课程ID、课程名称和课程分类不能为空");
+        }
+
+        CourseInfo course = new CourseInfo(
+                courseId.trim(),
+                courseName.trim(),
+                normalizeCourseTypeForManagement(courseType)
+        );
+        ensureCourseType(course.getCourseType());
+
+        boolean exists = courses.stream().anyMatch(item -> item.courseKey().equals(course.courseKey()));
+        if (!exists) {
+            courses.add(course);
+            return buildResponse(new ArrayList<>(currentRecords), "已添加课程：" + course.getCourseName());
+        }
+        return buildResponse(new ArrayList<>(currentRecords), "该分类下课程已存在：" + course.getCourseId());
     }
 
     List<EnrollRecord> processRecords(List<EnrollRecord> records) {
@@ -125,13 +187,35 @@ public class EnrollRecordService {
     }
 
     private EnrollResponse buildResponse(List<EnrollRecord> records, String message) {
-        Map<String, List<EnrollRecord>> recordsByType = records.stream()
+        Map<String, List<EnrollRecord>> recordsByType = courseTypes.stream()
+                .collect(Collectors.toMap(
+                        Function.identity(),
+                        type -> new ArrayList<EnrollRecord>(),
+                        (first, second) -> first,
+                        LinkedHashMap::new
+                ));
+        records.stream()
                 .collect(Collectors.groupingBy(
                         EnrollRecord::getCourseType,
                         LinkedHashMap::new,
                         Collectors.toList()
+                ))
+                .forEach(recordsByType::put);
+        Map<String, List<CourseInfo>> coursesByType = courseTypes.stream()
+                .collect(Collectors.toMap(
+                        Function.identity(),
+                        type -> new ArrayList<CourseInfo>(),
+                        (first, second) -> first,
+                        LinkedHashMap::new
                 ));
-        return new EnrollResponse(records, recordsByType, message);
+        courses.stream()
+                .collect(Collectors.groupingBy(
+                        CourseInfo::getCourseType,
+                        LinkedHashMap::new,
+                        Collectors.toList()
+                ))
+                .forEach(coursesByType::put);
+        return new EnrollResponse(records, recordsByType, coursesByType, new ArrayList<>(courseTypes), message);
     }
 
     private EnrollResponse updateAuditStatus(List<String> recordKeys, String auditStatus) {
@@ -170,6 +254,23 @@ public class EnrollRecordService {
         return normalizedRecord;
     }
 
+    private void syncCoursesFromRecords(List<EnrollRecord> records) {
+        for (EnrollRecord record : records) {
+            CourseInfo course = new CourseInfo(record.getCourseId(), record.getCourseName(), record.getCourseType());
+            ensureCourseType(course.getCourseType());
+            boolean exists = courses.stream().anyMatch(item -> item.courseKey().equals(course.courseKey()));
+            if (!exists) {
+                courses.add(course);
+            }
+        }
+    }
+
+    private void ensureCourseType(String courseType) {
+        if (!courseTypes.contains(courseType)) {
+            courseTypes.add(courseType);
+        }
+    }
+
     private String normalizeCourseType(String courseType, String courseName) {
         if (StringUtils.hasText(courseType)) {
             String trimmedType = courseType.trim();
@@ -192,6 +293,20 @@ public class EnrollRecordService {
             return ELECTIVE_COURSE;
         }
         return MAJOR_COURSE;
+    }
+
+    private String normalizeCourseTypeForManagement(String courseType) {
+        String trimmedType = courseType.trim();
+        if (trimmedType.contains("公共")) {
+            return PUBLIC_COURSE;
+        }
+        if (trimmedType.contains("专业")) {
+            return MAJOR_COURSE;
+        }
+        if (trimmedType.contains("选修")) {
+            return ELECTIVE_COURSE;
+        }
+        return trimmedType;
     }
 
     private boolean containsIgnoreCase(String value, String normalizedKeyword) {
