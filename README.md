@@ -222,7 +222,7 @@ erDiagram
         varchar source
     }
 ```
-![img.png](baseDemo/src/main/resources/img.png)
+
 ### 5.2 并发风险与解决方案
 
 核心并发风险：选课高峰期大量学生同时抢同一门课，可能出现超容量选课、重复选课、数据库锁等待增加、接口响应变慢。
