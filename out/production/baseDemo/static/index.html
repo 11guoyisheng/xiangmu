@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高校选课管理系统</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, "Microsoft YaHei", sans-serif;
+            color: #1f2937;
+            background: #f5f7fb;
+        }
+
+        header {
+            background: #1d4ed8;
+            color: #fff;
+            padding: 18px 32px;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 700;
+        }
+
+        main {
+            max-width: 1180px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .toolbar,
+        .import-panel,
+        .table-panel,
+        .type-group {
+            background: #fff;
+            border: 1px solid #dbe2ea;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 18px;
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        textarea,
+        input {
+            width: 100%;
+            border: 1px solid #b9c4d0;
+            border-radius: 6px;
+            padding: 10px;
+            font: inherit;
+        }
+
+        textarea {
+            min-height: 160px;
+            resize: vertical;
+            line-height: 1.6;
+        }
+
+        .search-input {
+            flex: 1 1 260px;
+        }
+
+        button {
+            border: 0;
+            border-radius: 6px;
+            padding: 10px 16px;
+            color: #fff;
+            background: #1d4ed8;
+            cursor: pointer;
+            font: inherit;
+            white-space: nowrap;
+        }
+
+        button.secondary {
+            background: #475569;
+        }
+
+        button.danger {
+            background: #b91c1c;
+        }
+
+        button.small {
+            padding: 6px 10px;
+            font-size: 13px;
+        }
+
+        button:hover {
+            filter: brightness(0.95);
+        }
+
+        h2 {
+            margin: 0 0 12px;
+            font-size: 18px;
+        }
+
+        .hint,
+        .message {
+            color: #526071;
+            font-size: 14px;
+        }
+
+        .message {
+            min-height: 22px;
+            margin: 8px 0 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #fff;
+        }
+
+        th,
+        td {
+            border-bottom: 1px solid #e5e7eb;
+            padding: 10px;
+            text-align: left;
+            font-size: 14px;
+        }
+
+        th {
+            background: #eef2f7;
+            font-weight: 700;
+        }
+
+        .status {
+            display: inline-block;
+            min-width: 58px;
+            border-radius: 999px;
+            padding: 3px 8px;
+            color: #fff;
+            text-align: center;
+            font-size: 12px;
+        }
+
+        .status-pending {
+            background: #64748b;
+        }
+
+        .status-approved {
+            background: #15803d;
+        }
+
+        .status-rejected {
+            background: #b91c1c;
+        }
+
+        .table-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
+        .type-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 14px;
+        }
+
+        .type-group h3 {
+            margin: 0 0 10px;
+            font-size: 16px;
+        }
+
+        .type-group ul {
+            margin: 0;
+            padding-left: 18px;
+            line-height: 1.8;
+        }
+
+        @media (max-width: 640px) {
+            header {
+                padding: 16px 20px;
+            }
+
+            main {
+                padding: 16px;
+            }
+
+            button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+<header>
+    <h1>高校选课管理系统 - 学生选课处理</h1>
+</header>
+
+<main>
+    <section class="import-panel">
+        <h2>CSV批量导入</h2>
+        <p class="hint">每行一条记录，格式：学生ID,课程ID,课程名称,课程类型。课程类型可填写公共课、专业课、选修课，未填写时后端自动识别。</p>
+        <textarea id="csvText">S000001,C000001,Java程序设计,专业课
+S000002,C000003,计算机网络,公共课
+S000001,C000001,Java程序设计A,专业课
+S000004,C000006,创新创业基础,选修课</textarea>
+        <p class="message" id="message"></p>
+        <button id="importButton" type="button">导入并处理</button>
+    </section>
+
+    <section class="toolbar">
+        <input class="search-input" id="keywordInput" type="search" placeholder="按学生ID、课程ID、课程名称、课程类型检索">
+        <button id="searchButton" type="button">检索</button>
+        <button id="resetButton" class="secondary" type="button">显示全部</button>
+    </section>
+
+    <section class="table-panel">
+        <h2>选课数据</h2>
+        <div class="table-actions">
+            <button id="batchApproveButton" type="button">批量通过</button>
+            <button id="batchRejectButton" class="danger" type="button">批量拒绝</button>
+        </div>
+        <table>
+            <thead>
+            <tr>
+                <th><input id="selectAll" type="checkbox" aria-label="全选"></th>
+                <th>学生ID</th>
+                <th>课程ID</th>
+                <th>课程名称</th>
+                <th>课程类型</th>
+                <th>审核状态</th>
+                <th>操作</th>
+            </tr>
+            </thead>
+            <tbody id="recordBody"></tbody>
+        </table>
+    </section>
+
+    <section>
+        <h2>按课程类型分类</h2>
+        <div class="type-grid" id="typeGrid"></div>
+    </section>
+</main>
+
+<script>
+    const csvText = document.querySelector("#csvText");
+    const message = document.querySelector("#message");
+    const recordBody = document.querySelector("#recordBody");
+    const typeGrid = document.querySelector("#typeGrid");
+    const keywordInput = document.querySelector("#keywordInput");
+    const selectAll = document.querySelector("#selectAll");
+
+    document.querySelector("#importButton").addEventListener("click", async () => {
+        const response = await fetch("/api/enrollments/import", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({csvText: csvText.value})
+        });
+        render(await response.json());
+    });
+
+    document.querySelector("#searchButton").addEventListener("click", async () => {
+        const keyword = encodeURIComponent(keywordInput.value.trim());
+        const response = await fetch(`/api/enrollments/search?keyword=${keyword}`);
+        render(await response.json());
+    });
+
+    document.querySelector("#resetButton").addEventListener("click", loadRecords);
+    document.querySelector("#batchApproveButton").addEventListener("click", () => auditSelected("approve"));
+    document.querySelector("#batchRejectButton").addEventListener("click", () => auditSelected("reject"));
+
+    selectAll.addEventListener("change", () => {
+        document.querySelectorAll(".record-check").forEach(checkbox => {
+            checkbox.checked = selectAll.checked;
+        });
+    });
+
+    keywordInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+            document.querySelector("#searchButton").click();
+        }
+    });
+
+    async function loadRecords() {
+        keywordInput.value = "";
+        const response = await fetch("/api/enrollments");
+        render(await response.json());
+    }
+
+    function render(data) {
+        message.textContent = data.message || "";
+        renderTable(data.records || []);
+        renderGroups(data.recordsByType || {});
+    }
+
+    function renderTable(records) {
+        recordBody.innerHTML = "";
+
+        if (records.length === 0) {
+            selectAll.checked = false;
+            recordBody.innerHTML = `<tr><td colspan="7">无匹配选课记录</td></tr>`;
+            return;
+        }
+
+        recordBody.innerHTML = records.map(record => `
+            <tr>
+                <td><input class="record-check" type="checkbox" value="${escapeHtml(recordKey(record))}" aria-label="选择记录"></td>
+                <td>${escapeHtml(record.studentId)}</td>
+                <td>${escapeHtml(record.courseId)}</td>
+                <td>${escapeHtml(record.courseName)}</td>
+                <td>${escapeHtml(record.courseType)}</td>
+                <td>${renderStatus(record.auditStatus)}</td>
+                <td>
+                    <button class="small" type="button" onclick="auditOne('approve', '${escapeHtml(recordKey(record))}')">通过</button>
+                    <button class="small danger" type="button" onclick="auditOne('reject', '${escapeHtml(recordKey(record))}')">拒绝</button>
+                </td>
+            </tr>
+        `).join("");
+        selectAll.checked = false;
+    }
+
+    function renderGroups(recordsByType) {
+        const entries = Object.entries(recordsByType);
+        typeGrid.innerHTML = "";
+
+        if (entries.length === 0) {
+            typeGrid.innerHTML = `<div class="type-group">无匹配选课记录</div>`;
+            return;
+        }
+
+        typeGrid.innerHTML = entries.map(([type, records]) => `
+            <div class="type-group">
+                <h3>${escapeHtml(type)}（${records.length}）</h3>
+                <ul>
+                    ${records.map(record => `<li>${escapeHtml(record.studentId)} - ${escapeHtml(record.courseName)}</li>`).join("")}
+                </ul>
+            </div>
+        `).join("");
+    }
+
+    async function auditOne(action, recordKey) {
+        await auditRecords(action, [recordKey]);
+    }
+
+    async function auditSelected(action) {
+        const keys = Array.from(document.querySelectorAll(".record-check:checked"))
+            .map(checkbox => checkbox.value);
+        await auditRecords(action, keys);
+    }
+
+    async function auditRecords(action, recordKeys) {
+        const response = await fetch(`/api/enrollments/${action}`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({recordKeys})
+        });
+        render(await response.json());
+    }
+
+    function recordKey(record) {
+        return `${record.studentId}#${record.courseId}`;
+    }
+
+    function renderStatus(status) {
+        const text = status || "待审核";
+        let className = "status-pending";
+        if (text === "已通过") {
+            className = "status-approved";
+        } else if (text === "已拒绝") {
+            className = "status-rejected";
+        }
+        return `<span class="status ${className}">${escapeHtml(text)}</span>`;
+    }
+
+    function escapeHtml(value) {
+        return String(value || "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#039;");
+    }
+
+    loadRecords();
+</script>
+</body>
+</html>
